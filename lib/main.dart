@@ -726,127 +726,182 @@ class AmbientBackground extends StatefulWidget {
   State<AmbientBackground> createState() => _AmbientBackgroundState();
 }
 
+// ============================================================
+//  Ambient Background — نسخهٔ بازنویسی‌شده
+//  - بدون پرش: از repeat(reverse:true) استفاده می‌کند (پینگ‌پونگ)
+//  - بدون بندینگ: گرادیانت ۶ استاپه + تغییر رنگ بین استاپ‌ها
+//  - عملکرد بالا: CustomPainter به‌جای ویجت‌های سنگین
+// ============================================================
+
+class AmbientBackground extends StatefulWidget {
+  final bool isDark;
+  const AmbientBackground({super.key, required this.isDark});
+
+  @override
+  State<AmbientBackground> createState() => _AmbientBackgroundState();
+}
+
 class _AmbientBackgroundState extends State<AmbientBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  // سه کنترلر مستقل با دوره‌های اول‌نسبت‌به‌هم برای حرکت ارگانیک
+  // چون همه reverse:true دارند، هیچ‌وقت پرش نمی‌کنند
+  late final AnimationController _driftA;
+  late final AnimationController _driftB;
+  late final AnimationController _breathe;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _driftA = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 23),
-    )..repeat();
+      duration: const Duration(seconds: 19),
+    )..repeat(reverse: true);
+
+    _driftB = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 27),
+    )..repeat(reverse: true);
+
+    _breathe = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 13),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _driftA.dispose();
+    _driftB.dispose();
+    _breathe.dispose();
     super.dispose();
-  }
-
-  Widget _blob(double size, Color color) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color.withOpacity(0.5), color.withOpacity(0)],
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final Color base =
-        widget.isDark ? const Color(0xFF0B0D12) : const Color(0xFFF6F7FB);
-    final Color blobA =
-        widget.isDark ? const Color(0xFF7C6CFF) : const Color(0xFF8B7CFF);
-    final Color blobB =
-        widget.isDark ? const Color(0xFF38BDF8) : const Color(0xFFF2B84B);
-    final double aOpacity = widget.isDark ? 0.7 : 0.4;
-    final double bOpacity = widget.isDark ? 0.55 : 0.45;
-
-    return Stack(
-      children: [
-        Positioned.fill(child: ColoredBox(color: base)),
-        RepaintBoundary(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final size = constraints.biggest;
-                  final double t = _controller.value * 2 * math.pi;
-
-                  final double ax = size.width * 0.18 +
-                      math.sin(t) * size.width * 0.06;
-                  final double ay = size.height * 0.2 +
-                      math.cos(t * 0.8) * size.height * 0.05;
-                  final double bx = size.width * 0.78 +
-                      math.cos(t * 0.7 + 2) * size.width * 0.07;
-                  final double by = size.height * 0.72 +
-                      math.sin(t * 0.9 + 1) * size.height * 0.06;
-
-                  return Stack(
-                    children: [
-                      Positioned(
-                        left: ax - 350,
-                        top: ay - 350,
-                        child: Opacity(
-                          opacity: aOpacity,
-                          child: _blob(700, blobA),
-                        ),
-                      ),
-                      Positioned(
-                        left: bx - 350,
-                        top: by - 350,
-                        child: Opacity(
-                          opacity: bOpacity,
-                          child: _blob(700, blobB),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: _GrainPainter(isDark: widget.isDark),
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_driftA, _driftB, _breathe]),
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _AmbientPainter(
+              driftA: _driftA.value,
+              driftB: _driftB.value,
+              breathe: _breathe.value,
+              isDark: widget.isDark,
             ),
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 }
 
-class _GrainPainter extends CustomPainter {
+class _AmbientPainter extends CustomPainter {
+  final double driftA;
+  final double driftB;
+  final double breathe;
   final bool isDark;
-  _GrainPainter({required this.isDark});
+
+  _AmbientPainter({
+    required this.driftA,
+    required this.driftB,
+    required this.breathe,
+    required this.isDark,
+  });
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rand = math.Random(7);
+    // ── پس‌زمینهٔ پایه ──
+    final Color base =
+        isDark ? const Color(0xFF0B0D12) : const Color(0xFFF6F7FB);
+    canvas.drawRect(Offset.zero & size, Paint()..color = base);
+
+    // ── موقعیت حباب A ──
+    // منحنی‌های متفاوت برای x و y → مسیر منحنی به‌جای خط مستقیم
+    final double ax = _lerp(
+        0.10, 0.32, Curves.easeInOutSine.transform(driftA)) * size.width;
+    final double ay = _lerp(
+        0.12, 0.38, Curves.easeInOutCubic.transform(driftA)) * size.height;
+
+    // ── موقعیت حباب B ──
+    final double bx = _lerp(
+        0.68, 0.90, Curves.easeInOutCubic.transform(driftB)) * size.width;
+    final double by = _lerp(
+        0.58, 0.84, Curves.easeInOutSine.transform(driftB)) * size.height;
+
+    // ── تنفس: تغییر مقیاس بسیار ملایم ──
+    final double breathT = Curves.easeInOutSine.transform(breathe);
+    final double scaleA = 0.92 + 0.08 * breathT;
+    final double scaleB = 1.04 - 0.08 * breathT;
+
+    // ── رنگ‌ها ──
+    final Color colorA =
+        isDark ? const Color(0xFF7C6CFF) : const Color(0xFF8B7CFF);
+    final Color colorB =
+        isDark ? const Color(0xFF38BDF8) : const Color(0xFFF2B84B);
+    final double opA = isDark ? 0.32 : 0.22;
+    final double opB = isDark ? 0.25 : 0.20;
+
+    // ── رسم حباب‌ها ──
+    _drawBlob(canvas, Offset(ax, ay), size.width * 0.52 * scaleA,
+        colorA, base, opA);
+    _drawBlob(canvas, Offset(bx, by), size.width * 0.48 * scaleB,
+        colorB, base, opB);
+
+    // ── گرین: شکنندگی بندینگ رنگی ──
+    _drawGrain(canvas, size);
+  }
+
+  /// گرادیانت شعاعی ۶ استاپه با تغییر رنگ بین استاپ‌ها
+  /// برای جلوگیری از بندینگ روی مانیتورهای ۸ بیتی
+  void _drawBlob(Canvas canvas, Offset center, double radius,
+      Color color, Color base, double maxOpacity) {
+    // به‌جای تغییر صرف آلفا، رنگ را هم کمی به سمت رنگ پایه شیفت می‌دهیم
+    // این کار «پله‌های» گرادیانت را می‌شکند و بندینگ را نامرئی می‌کند
+    final gradient = RadialGradient(
+      colors: [
+        Color.lerp(color, Colors.white, 0.06)!.withOpacity(maxOpacity),
+        color.withOpacity(maxOpacity * 0.72),
+        Color.lerp(color, base, 0.25)!.withOpacity(maxOpacity * 0.45),
+        Color.lerp(color, base, 0.50)!.withOpacity(maxOpacity * 0.22),
+        Color.lerp(color, base, 0.75)!.withOpacity(maxOpacity * 0.08),
+        base.withOpacity(0.0),
+      ],
+      stops: const [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+    );
+
     final paint = Paint()
-      ..color = (isDark ? Colors.white : Colors.black)
-          .withOpacity(isDark ? 0.03 : 0.025);
-    for (int i = 0; i < 900; i++) {
-      final x = rand.nextDouble() * size.width;
-      final y = rand.nextDouble() * size.height;
-      final r = rand.nextDouble() * 1.1 + 0.2;
+      ..shader = gradient.createShader(
+        Rect.fromCircle(center: center, radius: radius),
+      );
+
+    canvas.drawCircle(center, radius, paint);
+  }
+
+  /// نویز بسیار ریز برای شکستن حلقه‌های بندینگ
+  /// تعداد نقاط بیشتر از قبل + توزیع یکنواخت‌تر
+  void _drawGrain(Canvas canvas, Size size) {
+    final rand = math.Random(42);
+    final Color grainColor = isDark ? Colors.white : Colors.black;
+    final double grainOpacity = isDark ? 0.028 : 0.022;
+    final paint = Paint()..color = grainColor.withOpacity(grainOpacity);
+
+    // ۱۴۰۰ نقطه برای پوشش بهتر بدون افت عملکرد محسوس
+    for (int i = 0; i < 1400; i++) {
+      final double x = rand.nextDouble() * size.width;
+      final double y = rand.nextDouble() * size.height;
+      final double r = rand.nextDouble() * 1.2 + 0.3;
       canvas.drawCircle(Offset(x, y), r, paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GrainPainter oldDelegate) =>
+  bool shouldRepaint(covariant _AmbientPainter oldDelegate) =>
+      oldDelegate.driftA != driftA ||
+      oldDelegate.driftB != driftB ||
+      oldDelegate.breathe != breathe ||
       oldDelegate.isDark != isDark;
 }
 
