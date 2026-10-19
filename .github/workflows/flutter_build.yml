@@ -3,22 +3,13 @@ name: Flutter Timer CI/CD
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
-  # شغل اول: بیلد وب و اندروید (روی اوبونتو)
-  build-web-android:
+  build-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-          
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -26,29 +17,25 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Disable Analytics
+        run: flutter config --no-analytics
+
+      # 🪄 ترفند جادویی: ساخت خودکار پوشه‌های وب و ویندوز در سرور گیت‌هاب
+      - name: Generate Missing Platform Folders
+        run: flutter create .
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Web
         run: flutter build web --release --base-href /${{ github.event.repository.name }}/
 
-      - name: Build Android APK
-        run: flutter build apk --release
-
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/gh-pages@v3
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
+          branch: gh-pages
+          folder: build/web
 
-      - name: Upload Android APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-
-  # شغل دوم: بیلد ویندوز (روی ویندوز سرور)
   build-windows:
     runs-on: windows-latest
     steps:
@@ -61,6 +48,13 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Disable Analytics
+        run: flutter config --no-analytics
+
+      # 🪄 ترفند جادویی: ساخت خودکار پوشه‌های وب و ویندوز در سرور گیت‌هاب
+      - name: Generate Missing Platform Folders
+        run: flutter create .
+
       - name: Install dependencies
         run: flutter pub get
         
@@ -69,7 +63,6 @@ jobs:
 
       - name: Zip Windows Build
         shell: pwsh
-        # فشرده‌سازی پوشه خروجی برای دانلود راحت‌تر
         run: Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "windows-timer-app.zip"
 
       - name: Upload Windows Artifact
