@@ -718,14 +718,6 @@ class _TimerScreenState extends State<TimerScreen> {
   }
 }
 
-class AmbientBackground extends StatefulWidget {
-  final bool isDark;
-  const AmbientBackground({super.key, required this.isDark});
-
-  @override
-  State<AmbientBackground> createState() => _AmbientBackgroundState();
-}
-
 // ============================================================
 //  Ambient Background — نسخهٔ بازنویسی‌شده
 //  - بدون پرش: از repeat(reverse:true) استفاده می‌کند (پینگ‌پونگ)
