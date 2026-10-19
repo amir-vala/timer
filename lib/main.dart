@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -33,7 +34,7 @@ class _TimerAppState extends State<TimerApp> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0A0A0F),
+        scaffoldBackgroundColor: const Color(0xFF050508),
       ),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -41,13 +42,224 @@ class _TimerAppState extends State<TimerApp> {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+        scaffoldBackgroundColor: const Color(0xFFF8F9FA),
       ),
       home: TimerScreen(toggleTheme: _toggleTheme, isDark: _themeMode == ThemeMode.dark),
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// 🎬 DIGIT ROLLER - اعداد اسکرول شونده
+// ═══════════════════════════════════════════════════════
+class DigitRoller extends StatelessWidget {
+  final String char;
+  final int index;
+  final TextStyle? style;
+
+  const DigitRoller({
+    super.key,
+    required this.char,
+    required this.index,
+    this.style,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      transitionBuilder: (child, animation) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.9),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        );
+      },
+      child: Text(
+        char,
+        key: ValueKey('$index-$char'),
+        style: style,
+      ),
+    );
+  }
+}
+
+Widget buildRollingTime(String time, TextStyle style) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: List.generate(time.length, (index) {
+      final char = time[index];
+      if (char == ':') {
+        return Text(':', style: style);
+      }
+      return DigitRoller(char: char, index: index, style: style);
+    }),
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 🌌 AURORA BACKGROUND - پس‌زمینه متحرک
+// ═══════════════════════════════════════════════════════
+class AuroraBackground extends StatefulWidget {
+  final Widget child;
+  final bool isDark;
+
+  const AuroraBackground({
+    super.key,
+    required this.child,
+    required this.isDark,
+  });
+
+  @override
+  State<AuroraBackground> createState() => _AuroraBackgroundState();
+}
+
+class _AuroraBackgroundState extends State<AuroraBackground> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 12),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value * 2 * math.pi;
+        
+        return Stack(
+          children: [
+            // Base gradient
+            Container(
+              decoration: BoxDecoration(
+                gradient: widget.isDark
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF050508), Color(0xFF0A0A12)],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFF8F9FA), Color(0xFFE8EAF0)],
+                      ),
+              ),
+            ),
+            // Floating orbs
+            Positioned(
+              left: MediaQuery.of(context).size.width * 0.1 + math.sin(t) * 50,
+              top: MediaQuery.of(context).size.height * 0.2 + math.cos(t) * 30,
+              child: _buildOrb(
+                color: const Color(0xFF6C63FF).withOpacity(widget.isDark ? 0.15 : 0.1),
+                size: 300,
+              ),
+            ),
+            Positioned(
+              right: MediaQuery.of(context).size.width * 0.1 + math.cos(t * 0.7) * 40,
+              bottom: MediaQuery.of(context).size.height * 0.3 + math.sin(t * 0.7) * 40,
+              child: _buildOrb(
+                color: const Color(0xFFA855F7).withOpacity(widget.isDark ? 0.12 : 0.08),
+                size: 250,
+              ),
+            ),
+            Positioned(
+              left: MediaQuery.of(context).size.width * 0.4 + math.sin(t * 1.3) * 60,
+              bottom: MediaQuery.of(context).size.height * 0.1 + math.cos(t * 1.3) * 35,
+              child: _buildOrb(
+                color: const Color(0xFF38BDF8).withOpacity(widget.isDark ? 0.1 : 0.07),
+                size: 200,
+              ),
+            ),
+            child!,
+          ],
+        );
+      },
+      child: widget.child,
+    );
+  }
+
+  Widget _buildOrb({required Color color, required double size}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [color, color.withOpacity(0)],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// 🪟 GLASS CONTAINER - افکت شیشه‌ای
+// ═══════════════════════════════════════════════════════
+class GlassContainer extends StatelessWidget {
+  final Widget child;
+  final BorderRadius borderRadius;
+  final Color? borderColor;
+  final double blur;
+
+  const GlassContainer({
+    super.key,
+    required this.child,
+    this.borderRadius = const BorderRadius.all(Radius.circular(24)),
+    this.borderColor,
+    this.blur = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: BackdropFilter(
+        filter: ColorFilter.mode(
+          theme.colorScheme.surface.withOpacity(0.1),
+          BlendMode.srcOver,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withOpacity(0.05),
+            borderRadius: borderRadius,
+            border: Border.all(
+              color: borderColor ?? theme.colorScheme.outline.withOpacity(0.2),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: blur,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// ⏱️ TIMER SCREEN
+// ═══════════════════════════════════════════════════════
 class TimerScreen extends StatefulWidget {
   final VoidCallback toggleTheme;
   final bool isDark;
@@ -69,11 +281,10 @@ class _TimerScreenState extends State<TimerScreen> {
   int _remainingSeconds = 300;
   bool _isRunning = false;
   
-  // تایمر چرخه‌ای
   final int _cycleTotalSeconds = 180;
   int _cycleRemainingSeconds = 180;
   int _completedCycleCount = 0;
-  bool _isCycleEnabled = true; // 🆕 دکمه toggle برای چرخه
+  bool _isCycleEnabled = true;
 
   @override
   void dispose() {
@@ -87,12 +298,10 @@ class _TimerScreenState extends State<TimerScreen> {
     
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
-        // تایمر اصلی همیشه شمارش می‌کند
         if (_remainingSeconds > 0) {
           _remainingSeconds--;
         }
         
-        // تایمر چرخه‌ای فقط اگر فعال باشد
         if (_isCycleEnabled) {
           if (_cycleRemainingSeconds > 0) {
             _cycleRemainingSeconds--;
@@ -105,7 +314,6 @@ class _TimerScreenState extends State<TimerScreen> {
           }
         }
         
-        // پایان تایمر اصلی
         if (_remainingSeconds == 0) {
           _stopTimer();
           HapticFeedback.selectionClick();
@@ -144,7 +352,6 @@ class _TimerScreenState extends State<TimerScreen> {
   void _toggleCycle() {
     setState(() {
       _isCycleEnabled = !_isCycleEnabled;
-      // اگر غیرفعال شد، تایمر چرخه‌ای را ریست کن
       if (!_isCycleEnabled) {
         _cycleRemainingSeconds = _cycleTotalSeconds;
       }
@@ -165,125 +372,123 @@ class _TimerScreenState extends State<TimerScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final theme = Theme.of(context);
-            return Container(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-                top: 32,
-                left: 32,
-                right: 32,
-              ),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 24),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.outline.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(2),
+            return GlassContainer(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+                  top: 32,
+                  left: 32,
+                  right: 32,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 24),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outline.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
-                  ),
-                  Text(
-                    'Set Custom Timer',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
+                    Text(
+                      'Set Custom Timer',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  _buildSliderRow(
-                    theme,
-                    'Hours',
-                    customHours,
-                    'hr',
-                    0,
-                    3,
-                    3,
-                    (value) => setModalState(() => customHours = value.toInt()),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  _buildSliderRow(
-                    theme,
-                    'Minutes',
-                    customMinutes,
-                    'min',
-                    0,
-                    59,
-                    59,
-                    (value) => setModalState(() => customMinutes = value.toInt()),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  _buildSliderRow(
-                    theme,
-                    'Seconds',
-                    customSeconds,
-                    'sec',
-                    0,
-                    59,
-                    59,
-                    (value) => setModalState(() => customSeconds = value.toInt()),
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withOpacity(0.1),
+                    const SizedBox(height: 32),
+                    
+                    _buildSliderRow(
+                      theme,
+                      'Hours',
+                      customHours,
+                      'hr',
+                      0,
+                      3,
+                      3,
+                      (value) => setModalState(() => customHours = value.toInt()),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    _buildSliderRow(
+                      theme,
+                      'Minutes',
+                      customMinutes,
+                      'min',
+                      0,
+                      59,
+                      59,
+                      (value) => setModalState(() => customMinutes = value.toInt()),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    _buildSliderRow(
+                      theme,
+                      'Seconds',
+                      customSeconds,
+                      'sec',
+                      0,
+                      59,
+                      59,
+                      (value) => setModalState(() => customSeconds = value.toInt()),
+                    ),
+                    const SizedBox(height: 32),
+                    
+                    GlassContainer(
                       borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.timer, color: theme.colorScheme.primary, size: 24),
+                            const SizedBox(width: 12),
+                            Text(
+                              _formatTime((customHours * 3600) + (customMinutes * 60) + customSeconds),
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w300,
+                                color: theme.colorScheme.primary,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.timer, color: theme.colorScheme.primary, size: 24),
-                        const SizedBox(width: 12),
-                        Text(
-                          _formatTime((customHours * 3600) + (customMinutes * 60) + customSeconds),
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w300,
-                            color: theme.colorScheme.primary,
-                            letterSpacing: -1,
+                    const SizedBox(height: 32),
+                    
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final totalSeconds = (customHours * 3600) + (customMinutes * 60) + customSeconds;
+                          if (totalSeconds > 0) {
+                            _updateDuration(totalSeconds);
+                            Navigator.pop(context);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final totalSeconds = (customHours * 3600) + (customMinutes * 60) + customSeconds;
-                        if (totalSeconds > 0) {
-                          _updateDuration(totalSeconds);
-                          Navigator.pop(context);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                        child: const Text(
+                          'Apply',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
-                      child: const Text(
-                        'Apply',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -362,235 +567,203 @@ class _TimerScreenState extends State<TimerScreen> {
     final theme = Theme.of(context);
     
     return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Theme Toggle Button
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+      body: AuroraBackground(
+        isDark: widget.isDark,
+        child: Stack(
+          children: [
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Theme Toggle Button
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: GlassContainer(
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: theme.colorScheme.outline.withOpacity(0.2),
-                          ),
-                        ),
-                        child: IconButton(
-                          onPressed: widget.toggleTheme,
-                          icon: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              widget.isDark ? Icons.light_mode : Icons.dark_mode,
-                              key: ValueKey(widget.isDark),
-                              color: theme.colorScheme.onSurface,
-                              size: 28,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    
-                    // Main Timer - بدون انیمیشن
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 500),
-                      padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(40),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _isRunning 
-                                ? theme.colorScheme.primary.withOpacity(0.3)
-                                : Colors.transparent,
-                            blurRadius: 40,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _formatTime(_remainingSeconds),
-                            style: TextStyle(
-                              fontSize: 120,
-                              fontWeight: FontWeight.w200,
-                              color: theme.colorScheme.onSurface,
-                              letterSpacing: -5,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          AnimatedOpacity(
-                            duration: const Duration(milliseconds: 500),
-                            opacity: _isRunning ? 1.0 : 0.6,
-                            child: Text(
-                              _isRunning ? 'RUNNING' : 'READY',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: _isRunning 
-                                    ? theme.colorScheme.primary 
-                                    : theme.colorScheme.onSurface.withOpacity(0.5),
-                                letterSpacing: 4,
+                          child: IconButton(
+                            onPressed: widget.toggleTheme,
+                            icon: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              child: Icon(
+                                widget.isDark ? Icons.light_mode : Icons.dark_mode,
+                                key: ValueKey(widget.isDark),
+                                color: theme.colorScheme.onSurface,
+                                size: 28,
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 50),
-                    
-                    // Cycle Timer - با حالت غیرفعال
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 300),
-                      opacity: _isCycleEnabled ? 1.0 : 0.4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              theme.colorScheme.primary.withOpacity(0.15),
-                              theme.colorScheme.secondary.withOpacity(0.1),
+                      const SizedBox(height: 40),
+                      
+                      // Main Timer with Digit Rollers
+                      GlassContainer(
+                        borderRadius: BorderRadius.circular(40),
+                        borderColor: _isRunning 
+                            ? theme.colorScheme.primary.withOpacity(0.5) 
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              buildRollingTime(
+                                _formatTime(_remainingSeconds),
+                                TextStyle(
+                                  fontSize: 120,
+                                  fontWeight: FontWeight.w200,
+                                  color: theme.colorScheme.onSurface,
+                                  letterSpacing: -5,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              AnimatedOpacity(
+                                duration: const Duration(milliseconds: 500),
+                                opacity: _isRunning ? 1.0 : 0.6,
+                                child: Text(
+                                  _isRunning ? 'RUNNING' : 'READY',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: _isRunning 
+                                        ? theme.colorScheme.primary 
+                                        : theme.colorScheme.onSurface.withOpacity(0.5),
+                                    letterSpacing: 4,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: theme.colorScheme.primary.withOpacity(0.4),
-                            width: 2,
-                          ),
-                          boxShadow: _isCycleEnabled ? [
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withOpacity(0.2),
-                              blurRadius: 20,
-                              spreadRadius: -5,
-                            ),
-                          ] : null,
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              'CYCLE',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 3,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _formatTime(_cycleRemainingSeconds),
-                              style: TextStyle(
-                                fontSize: 44,
-                                fontWeight: FontWeight.w300,
-                                color: theme.colorScheme.primary,
-                                letterSpacing: -1,
-                              ),
-                            ),
-                          ],
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 50),
+                      
+                      // Cycle Timer with Digit Rollers
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        opacity: _isCycleEnabled ? 1.0 : 0.4,
+                        child: GlassContainer(
+                          borderRadius: BorderRadius.circular(24),
+                          borderColor: theme.colorScheme.primary.withOpacity(0.4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'CYCLE',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 3,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                buildRollingTime(
+                                  _formatTime(_cycleRemainingSeconds),
+                                  TextStyle(
+                                    fontSize: 44,
+                                    fontWeight: FontWeight.w300,
+                                    color: theme.colorScheme.primary,
+                                    letterSpacing: -1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
 
-                    const SizedBox(height: 70),
-                    
-                    // Controls - با دکمه جدید toggle چرخه
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildMiniButton(
-                          onTap: _isRunning ? _stopTimer : _startTimer,
-                          icon: _isRunning ? Icons.pause : Icons.play_arrow,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 16),
-                        _buildMiniButton(
-                          onTap: _resetTimer,
-                          icon: Icons.restart_alt,
-                          color: Colors.redAccent,
-                        ),
-                        const SizedBox(width: 16),
-                        _buildMiniButton(
-                          onTap: _toggleCycle,
-                          icon: Icons.loop,
-                          color: _isCycleEnabled ? theme.colorScheme.secondary : Colors.grey,
-                        ),
-                        const SizedBox(width: 16),
-                        _buildMiniButton(
-                          onTap: _openCustomTimerModal,
-                          icon: Icons.tune,
-                          color: Colors.amber,
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 50),
-                    
-                    // Preset Chips
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        _buildTimeChip('45 MIN', 2700),
-                        _buildTimeChip('1 HOUR', 3600),
-                        _buildTimeChip('60 MIN', 3600),
-                        _buildTimeChip('90 MIN', 5400),
-                      ],
-                    ),
-                  ],
+                      const SizedBox(height: 70),
+                      
+                      // Controls
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildGlassButton(
+                            onTap: _isRunning ? _stopTimer : _startTimer,
+                            icon: _isRunning ? Icons.pause : Icons.play_arrow,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 16),
+                          _buildGlassButton(
+                            onTap: _resetTimer,
+                            icon: Icons.restart_alt,
+                            color: Colors.redAccent,
+                          ),
+                          const SizedBox(width: 16),
+                          _buildGlassButton(
+                            onTap: _toggleCycle,
+                            icon: Icons.loop,
+                            color: _isCycleEnabled ? theme.colorScheme.secondary : Colors.grey,
+                          ),
+                          const SizedBox(width: 16),
+                          _buildGlassButton(
+                            onTap: _openCustomTimerModal,
+                            icon: Icons.tune,
+                            color: Colors.amber,
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 50),
+                      
+                      // Preset Chips
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          _buildTimeChip('45 MIN', 2700),
+                          _buildTimeChip('1 HOUR', 3600),
+                          _buildTimeChip('60 MIN', 3600),
+                          _buildTimeChip('90 MIN', 5400),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          
-          // Floating Cycles Menu - با عدد به جای آیکون
-          Positioned(
-            left: 24,
-            bottom: 24,
-            child: _FloatingCyclesMenu(
-              completedCycles: _completedCycleCount,
-              cycleTotalSeconds: _cycleTotalSeconds,
+            
+            // Floating Cycles Menu
+            Positioned(
+              left: 24,
+              bottom: 24,
+              child: _FloatingCyclesMenu(
+                completedCycles: _completedCycleCount,
+                cycleTotalSeconds: _cycleTotalSeconds,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMiniButton({required VoidCallback onTap, required IconData icon, required Color color}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(28),
-        child: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color.withOpacity(0.1),
-            border: Border.all(color: color.withOpacity(0.4), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.2),
-                blurRadius: 12,
-                spreadRadius: -4,
-              ),
-            ],
+  Widget _buildGlassButton({required VoidCallback onTap, required IconData icon, required Color color}) {
+    return GlassContainer(
+      borderRadius: BorderRadius.circular(28),
+      borderColor: color.withOpacity(0.3),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(0.1),
+            ),
+            child: Icon(icon, color: color, size: 28),
           ),
-          child: Icon(icon, color: color, size: 28),
         ),
       ),
     );
@@ -600,29 +773,11 @@ class _TimerScreenState extends State<TimerScreen> {
     final theme = Theme.of(context);
     bool isSelected = _totalSeconds == seconds;
     
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            theme.colorScheme.primary.withOpacity(isSelected ? 0.3 : 0.1),
-            theme.colorScheme.secondary.withOpacity(isSelected ? 0.2 : 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSelected 
-              ? theme.colorScheme.primary 
-              : theme.colorScheme.outline.withOpacity(0.3),
-          width: isSelected ? 2 : 1.5,
-        ),
-        boxShadow: isSelected ? [
-          BoxShadow(
-            color: theme.colorScheme.primary.withOpacity(0.3),
-            blurRadius: 12,
-            spreadRadius: -4,
-          ),
-        ] : null,
-      ),
+    return GlassContainer(
+      borderRadius: BorderRadius.circular(16),
+      borderColor: isSelected 
+          ? theme.colorScheme.primary 
+          : theme.colorScheme.outline.withOpacity(0.2),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -648,7 +803,9 @@ class _TimerScreenState extends State<TimerScreen> {
   }
 }
 
-// Floating Cycles Menu Widget
+// ═══════════════════════════════════════════════════════
+// 🎯 FLOATING CYCLES MENU
+// ═══════════════════════════════════════════════════════
 class _FloatingCyclesMenu extends StatefulWidget {
   final int completedCycles;
   final int cycleTotalSeconds;
@@ -673,8 +830,8 @@ class _FloatingCyclesMenuState extends State<_FloatingCyclesMenu> {
       onEnter: (_) => setState(() => _isExpanded = true),
       onExit: (_) => setState(() => _isExpanded = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutBack,
         width: _isExpanded ? 280 : 60,
         height: _isExpanded ? 400 : 60,
         decoration: BoxDecoration(
