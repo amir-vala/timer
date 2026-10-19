@@ -62,60 +62,50 @@ class TimerScreen extends StatefulWidget {
   State<TimerScreen> createState() => _TimerScreenState();
 }
 
-class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin {
+class _TimerScreenState extends State<TimerScreen> {
   Timer? _timer;
   
   int _totalSeconds = 300;
   int _remainingSeconds = 300;
   bool _isRunning = false;
   
+  // تایمر چرخه‌ای
   final int _cycleTotalSeconds = 180;
   int _cycleRemainingSeconds = 180;
   int _completedCycleCount = 0;
-
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.03).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-  }
+  bool _isCycleEnabled = true; // 🆕 دکمه toggle برای چرخه
 
   @override
   void dispose() {
     _timer?.cancel();
-    _pulseController.dispose();
     super.dispose();
   }
 
   void _startTimer() {
     if (_remainingSeconds == 0) return;
     setState(() => _isRunning = true);
-    _pulseController.repeat(reverse: true);
     
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
+        // تایمر اصلی همیشه شمارش می‌کند
         if (_remainingSeconds > 0) {
           _remainingSeconds--;
         }
         
-        if (_cycleRemainingSeconds > 0) {
-          _cycleRemainingSeconds--;
+        // تایمر چرخه‌ای فقط اگر فعال باشد
+        if (_isCycleEnabled) {
+          if (_cycleRemainingSeconds > 0) {
+            _cycleRemainingSeconds--;
+          }
+          
+          if (_cycleRemainingSeconds == 0) {
+            _completedCycleCount++;
+            _cycleRemainingSeconds = _cycleTotalSeconds;
+            HapticFeedback.heavyImpact();
+          }
         }
         
-        if (_cycleRemainingSeconds == 0) {
-          _completedCycleCount++;
-          _cycleRemainingSeconds = _cycleTotalSeconds;
-          HapticFeedback.heavyImpact();
-        }
-        
+        // پایان تایمر اصلی
         if (_remainingSeconds == 0) {
           _stopTimer();
           HapticFeedback.selectionClick();
@@ -127,8 +117,6 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
   void _stopTimer() {
     setState(() => _isRunning = false);
     _timer?.cancel();
-    _pulseController.stop();
-    _pulseController.reset();
   }
 
   void _resetTimer() {
@@ -151,6 +139,17 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
       });
       HapticFeedback.lightImpact();
     }
+  }
+
+  void _toggleCycle() {
+    setState(() {
+      _isCycleEnabled = !_isCycleEnabled;
+      // اگر غیرفعال شد، تایمر چرخه‌ای را ریست کن
+      if (!_isCycleEnabled) {
+        _cycleRemainingSeconds = _cycleTotalSeconds;
+      }
+    });
+    HapticFeedback.lightImpact();
   }
 
   void _openCustomTimerModal() {
@@ -199,7 +198,6 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                   ),
                   const SizedBox(height: 32),
                   
-                  // Hours Slider
                   _buildSliderRow(
                     theme,
                     'Hours',
@@ -212,7 +210,6 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                   ),
                   const SizedBox(height: 20),
                   
-                  // Minutes Slider
                   _buildSliderRow(
                     theme,
                     'Minutes',
@@ -225,7 +222,6 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                   ),
                   const SizedBox(height: 20),
                   
-                  // Seconds Slider
                   _buildSliderRow(
                     theme,
                     'Seconds',
@@ -238,7 +234,6 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                   ),
                   const SizedBox(height: 32),
                   
-                  // Preview
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -405,116 +400,112 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                     ),
                     const SizedBox(height: 40),
                     
-                    // Main Timer with Pulse Animation
-                    AnimatedBuilder(
-                      animation: _pulseAnimation,
-                      builder: (context, child) {
-                        return Transform.scale(
-                          scale: _isRunning ? _pulseAnimation.value : 1.0,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 500),
-                            padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surface.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(40),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _isRunning 
-                                      ? theme.colorScheme.primary.withOpacity(0.3)
-                                      : Colors.transparent,
-                                  blurRadius: 40,
-                                  spreadRadius: 5,
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _formatTime(_remainingSeconds),
-                                  style: TextStyle(
-                                    fontSize: 120,
-                                    fontWeight: FontWeight.w200,
-                                    color: theme.colorScheme.onSurface,
-                                    letterSpacing: -5,
-                                    height: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 500),
-                                  opacity: _isRunning ? 1.0 : 0.6,
-                                  child: Text(
-                                    _isRunning ? 'RUNNING' : 'READY',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: _isRunning 
-                                          ? theme.colorScheme.primary 
-                                          : theme.colorScheme.onSurface.withOpacity(0.5),
-                                      letterSpacing: 4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 50),
-                    
-                    // Cycle Timer
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                    // Main Timer - بدون انیمیشن
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 500),
+                      padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primary.withOpacity(0.15),
-                            theme.colorScheme.secondary.withOpacity(0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withOpacity(0.4),
-                          width: 2,
-                        ),
+                        color: theme.colorScheme.surface.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(40),
                         boxShadow: [
                           BoxShadow(
-                            color: theme.colorScheme.primary.withOpacity(0.2),
-                            blurRadius: 20,
-                            spreadRadius: -5,
+                            color: _isRunning 
+                                ? theme.colorScheme.primary.withOpacity(0.3)
+                                : Colors.transparent,
+                            blurRadius: 40,
+                            spreadRadius: 5,
                           ),
                         ],
                       ),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'CYCLE',
+                            _formatTime(_remainingSeconds),
                             style: TextStyle(
-                              fontSize: 11,
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 3,
+                              fontSize: 120,
+                              fontWeight: FontWeight.w200,
+                              color: theme.colorScheme.onSurface,
+                              letterSpacing: -5,
+                              height: 1,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _formatTime(_cycleRemainingSeconds),
-                            style: TextStyle(
-                              fontSize: 44,
-                              fontWeight: FontWeight.w300,
-                              color: theme.colorScheme.primary,
-                              letterSpacing: -1,
+                          const SizedBox(height: 20),
+                          AnimatedOpacity(
+                            duration: const Duration(milliseconds: 500),
+                            opacity: _isRunning ? 1.0 : 0.6,
+                            child: Text(
+                              _isRunning ? 'RUNNING' : 'READY',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: _isRunning 
+                                    ? theme.colorScheme.primary 
+                                    : theme.colorScheme.onSurface.withOpacity(0.5),
+                                letterSpacing: 4,
+                              ),
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 50),
+                    
+                    // Cycle Timer - با حالت غیرفعال
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 300),
+                      opacity: _isCycleEnabled ? 1.0 : 0.4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.colorScheme.primary.withOpacity(0.15),
+                              theme.colorScheme.secondary.withOpacity(0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withOpacity(0.4),
+                            width: 2,
+                          ),
+                          boxShadow: _isCycleEnabled ? [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withOpacity(0.2),
+                              blurRadius: 20,
+                              spreadRadius: -5,
+                            ),
+                          ] : null,
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'CYCLE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 3,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _formatTime(_cycleRemainingSeconds),
+                              style: TextStyle(
+                                fontSize: 44,
+                                fontWeight: FontWeight.w300,
+                                color: theme.colorScheme.primary,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 70),
                     
-                    // Controls - Miniature Buttons
+                    // Controls - با دکمه جدید toggle چرخه
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -523,13 +514,19 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
                           icon: _isRunning ? Icons.pause : Icons.play_arrow,
                           color: theme.colorScheme.primary,
                         ),
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 16),
                         _buildMiniButton(
                           onTap: _resetTimer,
                           icon: Icons.restart_alt,
                           color: Colors.redAccent,
                         ),
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 16),
+                        _buildMiniButton(
+                          onTap: _toggleCycle,
+                          icon: Icons.loop,
+                          color: _isCycleEnabled ? theme.colorScheme.secondary : Colors.grey,
+                        ),
+                        const SizedBox(width: 16),
                         _buildMiniButton(
                           onTap: _openCustomTimerModal,
                           icon: Icons.tune,
@@ -558,7 +555,7 @@ class _TimerScreenState extends State<TimerScreen> with TickerProviderStateMixin
             ),
           ),
           
-          // Floating Cycles Menu
+          // Floating Cycles Menu - با عدد به جای آیکون
           Positioned(
             left: 24,
             bottom: 24,
@@ -704,35 +701,42 @@ class _FloatingCyclesMenuState extends State<_FloatingCyclesMenu> {
 
   Widget _buildCollapsedView(ThemeData theme) {
     return Center(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(
-            Icons.loop,
-            color: theme.colorScheme.secondary,
-            size: 28,
-          ),
-          if (widget.completedCycles > 0)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  '${widget.completedCycles}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          gradient: widget.completedCycles > 0 
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    theme.colorScheme.secondary,
+                    theme.colorScheme.secondary.withOpacity(0.7),
+                  ],
+                )
+              : null,
+          color: widget.completedCycles > 0 ? null : theme.colorScheme.surfaceVariant,
+          shape: BoxShape.circle,
+          boxShadow: widget.completedCycles > 0 ? [
+            BoxShadow(
+              color: theme.colorScheme.secondary.withOpacity(0.4),
+              blurRadius: 12,
+              spreadRadius: -2,
             ),
-        ],
+          ] : null,
+        ),
+        child: Center(
+          child: Text(
+            '${widget.completedCycles}',
+            style: TextStyle(
+              color: widget.completedCycles > 0 
+                  ? Colors.white 
+                  : theme.colorScheme.onSurface.withOpacity(0.6),
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       ),
     );
   }
