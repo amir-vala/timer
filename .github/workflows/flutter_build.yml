@@ -4,7 +4,12 @@ on:
   push:
     branches: [ "main" ]
 
+# 🔑 اضافه کردن دسترسی نوشتن برای حل ارور 403 در دیپلوی وب
+permissions:
+  contents: write
+
 jobs:
+  # شغل اول: ساخت و دیپلوی نسخه وب
   build-web:
     runs-on: ubuntu-latest
     steps:
@@ -20,7 +25,6 @@ jobs:
       - name: Disable Analytics
         run: flutter config --no-analytics
 
-      # 🪄 ترفند جادویی: ساخت خودکار پوشه‌های وب و ویندوز در سرور گیت‌هاب
       - name: Generate Missing Platform Folders
         run: flutter create .
 
@@ -35,9 +39,11 @@ jobs:
         with:
           branch: gh-pages
           folder: build/web
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+  # شغل دوم: ساخت نسخه ویندوز
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2019 # 🪟 تغییر به ۲۰۱۹ برای حل ارور CMake و Visual Studio
     steps:
       - uses: actions/checkout@v4
       
@@ -51,8 +57,10 @@ jobs:
       - name: Disable Analytics
         run: flutter config --no-analytics
 
-      # 🪄 ترفند جادویی: ساخت خودکار پوشه‌های وب و ویندوز در سرور گیت‌هاب
-      - name: Generate Missing Platform Folders
+      - name: Enable Windows Desktop Support
+        run: flutter config --enable-windows-desktop
+
+      - name: Generate Windows Platform Folders
         run: flutter create .
 
       - name: Install dependencies
