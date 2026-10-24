@@ -1,9 +1,10 @@
 name: Flutter Timer CI/CD
 
+# Runs after a pull request is merged (a push lands on main) and on demand.
+# Pull requests do not run CI any more - only merged work is built and released.
 on:
   push:
     branches: [ "main" ]
-  pull_request:
   workflow_dispatch:
     inputs:
       force_release:
@@ -13,8 +14,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 env:
   FLUTTER_VERSION: '3.47.5'
@@ -73,15 +72,6 @@ jobs:
         with:
           name: web-build
           path: build/web
-
-      # Only publish from main; pull requests must not touch gh-pages
-      - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: build/web
-          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     name: Build Windows (portable)
@@ -171,23 +161,25 @@ jobs:
           path: ${{ steps.package.outputs.zip }}
           if-no-files-found: error
 
-      # A release is only published from main, and only once per version.
       - name: Check whether this version is already released
         id: release_check
-        if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
+          $exists = $false
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          $exists = ($LASTEXITCODE -eq 0)
+          if ($LASTEXITCODE -eq 0) { $exists = $true }
           Write-Host "release $tag exists: $exists"
           "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          # A missing release is not an error, but `gh` exits 1 and GitHub's
+          # pwsh wrapper ends the step with $LASTEXITCODE - so clear it.
+          exit 0
 
       - name: Compose release notes from the merged pull request
         id: notes
-        if: github.ref == 'refs/heads/main' && (steps.release_check.outputs.exists == 'false' || inputs.force_release)
+        if: steps.release_check.outputs.exists == 'false' || inputs.force_release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -221,7 +213,7 @@ jobs:
           "path=$notes" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub Release
-        if: github.ref == 'refs/heads/main' && (steps.release_check.outputs.exists == 'false' || inputs.force_release)
+        if: steps.release_check.outputs.exists == 'false' || inputs.force_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
