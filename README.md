@@ -57,6 +57,15 @@ Keep the whole `Release` folder together — `my_timer.exe` needs the sibling
 `data\`, `flutter_windows.dll` and `audioplayers_windows_plugin.dll` files.
 The folder is fully portable; copy it anywhere and run the `.exe`.
 
+### Releases
+
+Every merge to `main` that bumps `version:` in `pubspec.yaml` publishes a
+GitHub Release (`vX.Y.Z`) with the portable folder as
+`NOIR-CHROME-windows-x64-vX.Y.Z.zip` — unzip anywhere and run
+`my_timer.exe`. The release notes come from the merged pull request. Running
+the *Flutter Timer CI/CD* workflow manually with `force_release` refreshes the
+release for the current version.
+
 ### Package a portable zip
 
 ```powershell
