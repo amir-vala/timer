@@ -19,6 +19,26 @@ env:
   FLUTTER_VERSION: '3.47.5'
 
 jobs:
+  # The tag is read once, from pubspec.yaml, and every other job uses it.
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.read.outputs.tag }}
+      full: ${{ steps.read.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pubspec version
+        id: read
+        shell: bash
+        run: |
+          line=$(grep -E '^version:' pubspec.yaml | head -n1 | sed 's/^version:[[:space:]]*//')
+          tag="v${line%%+*}"
+          echo "full=$line" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "pubspec version: $line -> $tag"
+
   analyze-test:
     name: Analyze & test
     runs-on: ubuntu-latest
@@ -75,6 +95,7 @@ jobs:
 
   build-windows:
     name: Build Windows (portable)
+    needs: version
     runs-on: windows-2022
     env:
       CMAKE_GENERATOR: Visual Studio 17 2022
@@ -101,19 +122,6 @@ jobs:
       - name: Build Windows App
         run: flutter build windows --release
 
-      # The release tag always comes from pubspec.yaml, so bumping the version
-      # there is what produces a new release.
-      - name: Read app version
-        id: version
-        shell: pwsh
-        run: |
-          $line = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
-          $semver = ($line -split '\+')[0]
-          $tag = "v$semver"
-          "full=$line" >> $env:GITHUB_OUTPUT
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          Write-Host "pubspec version: $line -> $tag"
-
       - name: Package portable build
         id: package
         shell: pwsh
@@ -131,7 +139,7 @@ jobs:
           # Everything the app needs is already in that folder; the readme just
           # tells people they do not have to install anything.
           $lines = @(
-            'NOIR CHROME - portable Windows build ' + '${{ steps.version.outputs.tag }}',
+            'NOIR CHROME - portable Windows build ' + '${{ needs.version.outputs.tag }}',
             '',
             'This folder is fully portable: no installer, no runtime, no registry.',
             'Copy it anywhere and run my_timer.exe.',
@@ -147,7 +155,7 @@ jobs:
           )
           $lines | Set-Content -Path (Join-Path $stage 'README.txt') -Encoding utf8
 
-          $zip = "dist\NOIR-CHROME-windows-x64-${{ steps.version.outputs.tag }}.zip"
+          $zip = "dist\NOIR-CHROME-windows-x64-${{ needs.version.outputs.tag }}.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path $stage -DestinationPath $zip
           $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
@@ -157,69 +165,149 @@ jobs:
       - name: Upload Portable Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NOIR-CHROME-windows-x64-${{ steps.version.outputs.tag }}
+          name: NOIR-CHROME-windows-x64-${{ needs.version.outputs.tag }}
           path: ${{ steps.package.outputs.zip }}
           if-no-files-found: error
 
+  build-android:
+    name: Build Android APK
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Disable Analytics
+        run: flutter config --no-analytics
+
+      # android/ is checked in (including the Gradle wrapper), so no
+      # `flutter create .` scaffolding step is needed
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "dist/NOIR-CHROME-android-${{ needs.version.outputs.tag }}.apk"
+          ls -lh dist
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOIR-CHROME-android-${{ needs.version.outputs.tag }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+  # One release, both platforms. Runs only when every build job passed, and
+  # only from main - a manual run on a branch builds but never publishes.
+  release:
+    name: Publish release
+    needs: [version, analyze-test, build-web, build-windows, build-android]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download portable Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: NOIR-CHROME-windows-x64-${{ needs.version.outputs.tag }}
+          path: dist
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: NOIR-CHROME-android-${{ needs.version.outputs.tag }}
+          path: dist
+
+      - name: List release assets
+        run: ls -lh dist
+
       - name: Check whether this version is already released
         id: release_check
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = '${{ steps.version.outputs.tag }}'
-          $exists = $false
-          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) { $exists = $true }
-          Write-Host "release $tag exists: $exists"
-          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          # A missing release is not an error, but `gh` exits 1 and GitHub's
-          # pwsh wrapper ends the step with $LASTEXITCODE - so clear it.
-          exit 0
+          tag='${{ needs.version.outputs.tag }}'
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "release $tag already exists - skipping"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "release $tag does not exist yet"
+          fi
 
       - name: Compose release notes from the merged pull request
         id: notes
         if: steps.release_check.outputs.exists == 'false' || inputs.force_release
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = '${{ steps.version.outputs.tag }}'
-          $notes = 'dist\release-notes.md'
-          $footer = @(
-            '',
-            '---',
-            '',
-            '### Portable Windows download',
-            '',
-            'Grab the zip below, extract it anywhere and run `my_timer.exe` -',
-            'no installer, no runtime, no registry entries.'
-          )
+          set -euo pipefail
+          tag='${{ needs.version.outputs.tag }}'
+          mkdir -p dist
 
-          $prs = gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:GITHUB_SHA/pulls" | ConvertFrom-Json
-          if ($prs -and $prs.Count -gt 0) {
-            $pr = $prs[0]
-            $body = $pr.body
-            if ([string]::IsNullOrWhiteSpace($body)) { $body = '_No description provided._' }
-            $header = "# $($pr.title)`n`n"
-            Write-Host "release notes from PR #$($pr.number): $($pr.title)"
-          } else {
-            $body = "Automated build of $tag."
-            $header = "# NOIR CHROME $tag`n`n"
-            Write-Host 'no pull request found, falling back to a generic body'
-          }
+          {
+            echo ''
+            echo '---'
+            echo ''
+            echo '### Downloads'
+            echo ''
+            echo "- **Windows (portable)** - \`NOIR-CHROME-windows-x64-$tag.zip\`: unzip anywhere and run \`my_timer.exe\`."
+            echo "- **Android** - \`NOIR-CHROME-android-$tag.apk\`: sideload it; it is debug-signed, so Android will ask you to confirm the install."
+          } > dist/footer.md
 
-          ($header + $body + ($footer -join "`n")) | Set-Content -Path $notes -Encoding utf8
-          "path=$notes" >> $env:GITHUB_OUTPUT
+          pr_json=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls")
+          count=$(echo "$pr_json" | jq 'length')
+          if [ "$count" -gt 0 ]; then
+            echo "$pr_json" | jq -r '.[0] | "# " + .title + "\n\n" + (.body // "_No description provided._")' > dist/body.md
+            echo "release notes from PR #$(echo "$pr_json" | jq -r '.[0].number')"
+          else
+            printf '# NOIR CHROME %s\n\nAutomated build of %s.\n' "$tag" "$tag" > dist/body.md
+            echo "no pull request found, falling back to a generic body"
+          fi
+
+          cat dist/body.md dist/footer.md > dist/release-notes.md
+          echo "path=dist/release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         if: steps.release_check.outputs.exists == 'false' || inputs.force_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: NOIR CHROME ${{ steps.version.outputs.tag }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: NOIR CHROME ${{ needs.version.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
-          files: ${{ steps.package.outputs.zip }}
+          files: |
+            dist/*.zip
+            dist/*.apk
           overwrite_files: true
           draft: false
           prerelease: false

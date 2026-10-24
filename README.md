@@ -1,8 +1,8 @@
 # NOIR CHROME — Timer
 
 A monochrome, liquid-chrome session timer with a 3-minute cycle tracker.
-Built with Flutter; it runs in the browser **and** as a native Windows
-desktop application.
+Built with Flutter; it runs in the browser, as a native Windows desktop
+application **and on Android**.
 
 ## Features
 
@@ -16,6 +16,7 @@ desktop application.
   screen, from the 680×620 minimum up to a full desktop
 - Native Windows window: centred launch, sensible minimum size, dark title bar
   and the NOIR CHROME app icon
+- Android app: launcher icon, dark splash, haptics, sideloadable release APK
 
 ---
 
@@ -60,9 +61,13 @@ The folder is fully portable; copy it anywhere and run the `.exe`.
 ### Releases
 
 Every merge to `main` that bumps `version:` in `pubspec.yaml` publishes a
-GitHub Release (`vX.Y.Z`) with the portable folder as
-`NOIR-CHROME-windows-x64-vX.Y.Z.zip` — unzip anywhere and run
-`my_timer.exe`. The release notes come from the merged pull request.
+GitHub Release (`vX.Y.Z`) with two assets:
+
+- **`NOIR-CHROME-windows-x64-vX.Y.Z.zip`** — the portable Windows folder,
+  unzip anywhere and run `my_timer.exe`;
+- **`NOIR-CHROME-android-vX.Y.Z.apk`** — sideload it on Android.
+
+The release notes come from the merged pull request.
 
 CI runs only after a pull request is merged (a push to `main`); pull requests
 themselves are not built. Running the *Flutter Timer CI/CD* workflow manually
@@ -92,6 +97,45 @@ This builds the release and writes `dist\NOIR-CHROME-windows-x64.zip`.
   default Windows output device.
 - App icon and version metadata live in `windows/runner/resources/app_icon.ico`
   and `windows/runner/Runner.rc`.
+
+---
+
+## Android
+
+The same HUD runs on phones and tablets: it scales itself to the screen exactly
+the way it does in a resized desktop window.
+
+### Requirements
+
+- Flutter 3.32+ (developed against 3.47)
+- Android SDK (36) and build tools, or simply Android Studio
+- JDK 17+
+
+### Run
+
+```powershell
+flutter run -d android
+```
+
+### Build an APK
+
+```powershell
+flutter build apk --release
+```
+
+The APK is written to `build\app\outputs\flutter-apk\app-release.apk`. It is
+**debug-signed** — perfect for sideloading, but add your own keystore in
+`android/app/build.gradle.kts` before publishing to the Play Store.
+
+### Android implementation notes
+
+- `android/` is a standard Flutter target, checked in with its Gradle wrapper so
+  CI can build without regenerating the project.
+- The launcher icon is the NOIR CHROME mark, generated for every mipmap density.
+- The launch screen and the window behind Flutter use the app's own near-black
+  (`#0A0A0B`), so there is no white flash while the engine starts.
+- Haptics are live here — `lib/haptics.dart` no-ops them on desktop instead of
+  raising `MissingPluginException`.
 
 ---
 
@@ -194,6 +238,7 @@ lib/
   haptics.dart       platform-safe haptics
   window_chrome.dart native title-bar sync (Windows)
 windows/             native Windows runner
+android/             Android runner (Gradle, manifest, icons)
 web/                 PWA shell and manifest
 assets/              fonts and WAV chimes
 ```
