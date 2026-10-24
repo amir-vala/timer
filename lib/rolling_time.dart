@@ -1,8 +1,14 @@
-import 'dart:ui' show FontFeature;
 import 'package:flutter/material.dart';
 
-/// نمایش زمان با اعداد اسلایدی (Odometer).
-/// فقط رقمی که تغییر می‌کند انیمیشن دارد، بقیه ثابت‌اند.
+/// ─────────────────────────────────────────────────────────────
+///  Odometer-style rolling time, tuned for NOIR CHROME.
+///
+///  Timing ported from the CSS reference:
+///    .dstrip { transition: transform .55s cubic-bezier(.22,1,.36,1) }
+///  → 550 ms with Cubic(0.22, 1.0, 0.36, 1.0).
+///
+///  Only the digit that actually changes rolls; the rest stay still.
+/// ─────────────────────────────────────────────────────────────
 class RollingTime extends StatefulWidget {
   const RollingTime({
     super.key,
@@ -11,6 +17,10 @@ class RollingTime extends StatefulWidget {
     required this.color,
     this.showHours = false,
     this.animate = true,
+    this.weight = FontWeight.w300,
+    this.fontFamily,
+    this.metallic = false,
+    this.rollDuration = const Duration(milliseconds: 550),
   });
 
   final int seconds;
@@ -18,6 +28,12 @@ class RollingTime extends StatefulWidget {
   final Color color;
   final bool showHours;
   final bool animate;
+  final FontWeight weight;
+  final String? fontFamily;
+
+  /// Subtle vertical chrome sheen (light → shadow → light) across digits.
+  final bool metallic;
+  final Duration rollDuration;
 
   @override
   State<RollingTime> createState() => _RollingTimeState();
@@ -30,7 +46,7 @@ class _RollingTimeState extends State<RollingTime> {
   void didUpdateWidget(covariant RollingTime oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.seconds != widget.seconds) {
-      // شمارش معکوس -> به پایین / ریست -> به بالا
+      // countdown → roll down / reset → roll up
       _down = widget.seconds < oldWidget.seconds;
     }
   }
@@ -49,11 +65,12 @@ class _RollingTimeState extends State<RollingTime> {
 
     final TextStyle style = TextStyle(
       fontSize: widget.fontSize,
-      fontWeight: FontWeight.w200,
+      fontWeight: widget.weight,
+      fontFamily: widget.fontFamily,
       height: 1.0,
-      letterSpacing: 0,
+      letterSpacing: -widget.fontSize * 0.02, // matches CSS letter-spacing:-.02em
       color: widget.color,
-      fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
     );
 
     Widget digit(String id, String char) => ExcludeSemantics(
@@ -65,6 +82,7 @@ class _RollingTimeState extends State<RollingTime> {
             style: style,
             down: _down,
             animate: widget.animate,
+            duration: widget.rollDuration,
           ),
         );
 
@@ -73,11 +91,14 @@ class _RollingTimeState extends State<RollingTime> {
             width: widget.fontSize * 0.30,
             height: digitH,
             child: Center(
-              child: Text(
-                ':',
-                textAlign: TextAlign.center,
-                style: style.copyWith(
-                  color: widget.color.withOpacity(0.30),
+              child: Transform.translate(
+                offset: Offset(0, -widget.fontSize * 0.04),
+                child: Text(
+                  ':',
+                  textAlign: TextAlign.center,
+                  style: style.copyWith(
+                    color: widget.color.withAlpha(64),
+                  ),
                 ),
               ),
             ),
@@ -110,7 +131,7 @@ class _RollingTimeState extends State<RollingTime> {
         ? '${_pad(hh)}:${_pad(mm)}:${_pad(ss)}'
         : '${_pad(mm)}:${_pad(ss)}';
 
-    return Semantics(
+    Widget row = Semantics(
       label: 'Time remaining: $label',
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -118,10 +139,35 @@ class _RollingTimeState extends State<RollingTime> {
         children: children,
       ),
     );
+
+    if (widget.metallic) {
+      // Liquid-chrome sheen: ink at top, deeper tone through the waist,
+      // a faint specular band, back to ink at the base.
+      final Color deep = Color.lerp(widget.color, Colors.black, 0.35)!;
+      final Color spec = Color.lerp(widget.color, Colors.white, 0.25)!;
+      row = ShaderMask(
+        shaderCallback: (Rect bounds) => LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0.0, 0.40, 0.58, 0.74, 1.0],
+          colors: [
+            widget.color,
+            deep,
+            spec,
+            deep,
+            widget.color,
+          ],
+        ).createShader(bounds),
+        blendMode: BlendMode.srcIn,
+        child: row,
+      );
+    }
+
+    return row;
   }
 }
 
-/// یک قرقرهٔ تک‌رقمی: دو رقم (جدید + قبلی) داخل یک پنجرهٔ بریده‌شده.
+/// Single-digit pulley: two glyphs (new + previous) inside a clipped window.
 class _DigitRoller extends StatefulWidget {
   const _DigitRoller({
     super.key,
@@ -131,6 +177,7 @@ class _DigitRoller extends StatefulWidget {
     required this.style,
     required this.down,
     required this.animate,
+    required this.duration,
   });
 
   final String char;
@@ -139,6 +186,7 @@ class _DigitRoller extends StatefulWidget {
   final TextStyle style;
   final bool down;
   final bool animate;
+  final Duration duration;
 
   @override
   State<_DigitRoller> createState() => _DigitRollerState();
@@ -150,15 +198,15 @@ class _DigitRollerState extends State<_DigitRoller>
   late String _current;
   late String _previous;
 
+  /// NOIR CHROME roll curve — cubic-bezier(.22, 1, .36, 1).
+  static const Curve _rollCurve = Cubic(0.22, 1.0, 0.36, 1.0);
+
   @override
   void initState() {
     super.initState();
     _current = widget.char;
     _previous = widget.char;
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
+    _controller = AnimationController(vsync: this, duration: widget.duration);
   }
 
   @override
@@ -208,10 +256,10 @@ class _DigitRollerState extends State<_DigitRoller>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
-        final double t = Curves.easeOutCubic.transform(_controller.value);
+        final double t = _rollCurve.transform(_controller.value);
         final double h = widget.height;
 
-        // هر دو رقم با هم و در یک جهت حرکت می‌کنند (قرقرهٔ واقعی).
+        // Both glyphs travel together, one direction — a real odometer pulley.
         final double currentTop = widget.down ? h * (t - 1) : h * (1 - t);
         final double previousTop = widget.down ? h * t : -h * t;
 
