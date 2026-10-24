@@ -3,38 +3,75 @@ name: Flutter Timer CI/CD
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: write
   pages: write
   id-token: write
 
+env:
+  FLUTTER_VERSION: '3.47.5'
+
 jobs:
-  build-web:
+  analyze-test:
+    name: Analyze & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
       - name: Disable Analytics
         run: flutter config --no-analytics
 
-      - name: Generate Missing Platform Folders
-        run: flutter create .
+      - name: Install dependencies
+        run: flutter pub get
 
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+  build-web:
+    name: Build web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Disable Analytics
+        run: flutter config --no-analytics
+
+      # web/ is checked in, so no `flutter create .` scaffolding step is needed
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Web
         run: flutter build web --release --base-href /${{ github.event.repository.name }}/
 
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+
+      # Only publish from main; pull requests must not touch gh-pages
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
@@ -42,16 +79,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
+    name: Build Windows
     runs-on: windows-2022
     env:
       CMAKE_GENERATOR: Visual Studio 17 2022
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -61,12 +99,10 @@ jobs:
       - name: Enable Windows Desktop Support
         run: flutter config --enable-windows-desktop
 
-      - name: Generate Windows Platform Folders
-        run: flutter create .
-
+      # windows/ is checked in, so no `flutter create .` scaffolding step is needed
       - name: Install dependencies
         run: flutter pub get
-        
+
       - name: Build Windows App
         run: flutter build windows --release
 
