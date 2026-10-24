@@ -62,9 +62,11 @@ The folder is fully portable; copy it anywhere and run the `.exe`.
 Every merge to `main` that bumps `version:` in `pubspec.yaml` publishes a
 GitHub Release (`vX.Y.Z`) with the portable folder as
 `NOIR-CHROME-windows-x64-vX.Y.Z.zip` — unzip anywhere and run
-`my_timer.exe`. The release notes come from the merged pull request. Running
-the *Flutter Timer CI/CD* workflow manually with `force_release` refreshes the
-release for the current version.
+`my_timer.exe`. The release notes come from the merged pull request.
+
+CI runs only after a pull request is merged (a push to `main`); pull requests
+themselves are not built. Running the *Flutter Timer CI/CD* workflow manually
+with `force_release` refreshes the release for the current version.
 
 ### Package a portable zip
 
@@ -100,7 +102,7 @@ flutter run -d chrome
 flutter build web
 ```
 
-Pushing to `main` builds the web app and publishes it to the `gh-pages` branch via GitHub Actions (see `.github/workflows/flutter_build.yml`).
+Every merge to `main` builds the web app and uploads it as the `web-build` workflow artifact. Nothing is hosted automatically - take the artifact from the run, or run it locally.
 
 ---
 
