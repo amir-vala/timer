@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NOIR CHROME stage colour, so the splash and the frame behind Flutter
+         match the app instead of flashing white. -->
+    <color name="noir_bg">#FF0A0A0B</color>
+</resources>
