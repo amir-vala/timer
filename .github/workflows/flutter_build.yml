@@ -5,6 +5,11 @@ on:
     branches: [ "main" ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Publish (or refresh) the release for the current pubspec version'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -79,7 +84,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
-    name: Build Windows
+    name: Build Windows (portable)
     runs-on: windows-2022
     env:
       CMAKE_GENERATOR: Visual Studio 17 2022
@@ -106,12 +111,124 @@ jobs:
       - name: Build Windows App
         run: flutter build windows --release
 
-      - name: Zip Windows Build
+      # The release tag always comes from pubspec.yaml, so bumping the version
+      # there is what produces a new release.
+      - name: Read app version
+        id: version
         shell: pwsh
-        run: Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "windows-timer-app.zip"
+        run: |
+          $line = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
+          $semver = ($line -split '\+')[0]
+          $tag = "v$semver"
+          "full=$line" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "pubspec version: $line -> $tag"
 
-      - name: Upload Windows Artifact
+      - name: Package portable build
+        id: package
+        shell: pwsh
+        run: |
+          $release = 'build\windows\x64\runner\Release'
+          if (-not (Test-Path (Join-Path $release 'my_timer.exe'))) {
+            throw "Windows build missing at $release"
+          }
+
+          $stage = 'dist\NOIR-CHROME'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item (Join-Path $release '*') $stage -Recurse -Force
+
+          # Everything the app needs is already in that folder; the readme just
+          # tells people they do not have to install anything.
+          $lines = @(
+            'NOIR CHROME - portable Windows build ' + '${{ steps.version.outputs.tag }}',
+            '',
+            'This folder is fully portable: no installer, no runtime, no registry.',
+            'Copy it anywhere and run my_timer.exe.',
+            '',
+            'Controls:',
+            '  Space    start / pause',
+            '  R        reset',
+            '  C        toggle the 3-minute cycle',
+            '  F        focus mode (Esc leaves it)',
+            '  T        custom timer',
+            '',
+            'Built from https://github.com/' + '${{ github.repository }}'
+          )
+          $lines | Set-Content -Path (Join-Path $stage 'README.txt') -Encoding utf8
+
+          $zip = "dist\NOIR-CHROME-windows-x64-${{ steps.version.outputs.tag }}.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $stage -DestinationPath $zip
+          $size = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+          Write-Host "Packaged $zip ($size MB)"
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Portable Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-timer-app
-          path: windows-timer-app.zip
+          name: NOIR-CHROME-windows-x64-${{ steps.version.outputs.tag }}
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
+
+      # A release is only published from main, and only once per version.
+      - name: Check whether this version is already released
+        id: release_check
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+          Write-Host "release $tag exists: $exists"
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: Compose release notes from the merged pull request
+        id: notes
+        if: github.ref == 'refs/heads/main' && (steps.release_check.outputs.exists == 'false' || inputs.force_release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $notes = 'dist\release-notes.md'
+          $footer = @(
+            '',
+            '---',
+            '',
+            '### Portable Windows download',
+            '',
+            'Grab the zip below, extract it anywhere and run `my_timer.exe` -',
+            'no installer, no runtime, no registry entries.'
+          )
+
+          $prs = gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:GITHUB_SHA/pulls" | ConvertFrom-Json
+          if ($prs -and $prs.Count -gt 0) {
+            $pr = $prs[0]
+            $body = $pr.body
+            if ([string]::IsNullOrWhiteSpace($body)) { $body = '_No description provided._' }
+            $header = "# $($pr.title)`n`n"
+            Write-Host "release notes from PR #$($pr.number): $($pr.title)"
+          } else {
+            $body = "Automated build of $tag."
+            $header = "# NOIR CHROME $tag`n`n"
+            Write-Host 'no pull request found, falling back to a generic body'
+          }
+
+          ($header + $body + ($footer -join "`n")) | Set-Content -Path $notes -Encoding utf8
+          "path=$notes" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' && (steps.release_check.outputs.exists == 'false' || inputs.force_release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: NOIR CHROME ${{ steps.version.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: ${{ steps.package.outputs.zip }}
+          overwrite_files: true
+          draft: false
+          prerelease: false
+          make_latest: true
